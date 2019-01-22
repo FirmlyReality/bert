@@ -25,6 +25,7 @@ import modeling
 import optimization
 import tokenization
 import tensorflow as tf
+import pandas as pd
 
 flags = tf.flags
 
@@ -373,7 +374,45 @@ class ColaProcessor(DataProcessor):
           InputExample(guid=guid, text_a=text_a, text_b=None, label=label))
     return examples
 
+class GubaProcessor(DataProcessor):
+  """Processor for the Guba data set."""
 
+  def get_train_examples(self, data_dir):
+    """See base class."""
+    return self._create_examples(
+        pd.read_csv(os.path.join(data_dir, "samples1_utf8.csv"),dtype=str)[:4200], "train")
+
+  def get_dev_examples(self, data_dir):
+    """See base class."""
+    return self._create_examples(
+        pd.read_csv(os.path.join(data_dir, "samples1_utf8.csv"),dtype=str)[:4200], "dev")
+
+  def get_test_examples(self, data_dir):
+    """See base class."""
+    return self._create_examples(
+        pd.read_csv(os.path.join(data_dir, "samples1_utf8.csv"),dtype=str)[:4200], "test")
+
+  def get_labels(self):
+    """See base class."""
+    return ["0", "1"]
+
+  def _create_examples(self, data, set_type):
+    """Creates examples for the training and dev sets."""
+    examples = []
+    if set_type == "train":
+        data = data[:3000]
+    else:
+        data = data[3000:]
+    for i in data.index:
+        d = data.loc[i];
+        guid = "%s-%s" % (set_type, str(i))
+        text_a = tokenization.convert_to_unicode(str(d['content']))
+        label = tokenization.convert_to_unicode(str(d['是否股评相关']))
+        examples.append(
+            InputExample(guid=guid, text_a=text_a, text_b=None, label=label))
+    #print(examples[:10])
+    return examples
+    
 def convert_single_example(ex_index, example, label_list, max_seq_length,
                            tokenizer):
   """Converts a single `InputExample` into a single `InputFeatures`."""
@@ -788,6 +827,7 @@ def main(_):
       "mnli": MnliProcessor,
       "mrpc": MrpcProcessor,
       "xnli": XnliProcessor,
+      "guba": GubaProcessor
   }
 
   tokenization.validate_case_matches_checkpoint(FLAGS.do_lower_case,
