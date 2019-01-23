@@ -9,8 +9,8 @@ python run_classifier.py ^
 --vocab_file=%BERT_BASE_DIR%/vocab.txt ^
 --bert_config_file=%BERT_BASE_DIR%/bert_config.json ^
 --init_checkpoint=%BERT_BASE_DIR%/bert_model.ckpt ^
---max_seq_length=485 ^
---train_batch_size=8 ^
+--max_seq_length=256 ^
+--train_batch_size=16 ^
 --learning_rate=5e-5 ^
 --num_train_epochs=2.0 ^
 --output_dir=../output/ 

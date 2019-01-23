@@ -26,6 +26,7 @@ import optimization
 import tokenization
 import tensorflow as tf
 import pandas as pd
+import numpy as np
 
 flags = tf.flags
 
@@ -380,7 +381,7 @@ class GubaProcessor(DataProcessor):
   def get_train_examples(self, data_dir):
     """See base class."""
     return self._create_examples(
-        pd.read_csv(os.path.join(data_dir, "samples1_utf8.csv"),dtype=str)[:4200], "train")
+        pd.read_csv(os.path.join(data_dir, "samples1_utf8.csv"),dtype=str)[:4200], "train") 
 
   def get_dev_examples(self, data_dir):
     """See base class."""
@@ -670,6 +671,9 @@ def create_model(bert_config, is_training, input_ids, input_mask, segment_ids,
     log_probs = tf.nn.log_softmax(logits, axis=-1)
 
     one_hot_labels = tf.one_hot(labels, depth=num_labels, dtype=tf.float32)
+    global train_weights
+    if is_training:
+      one_hot_labels = one_hot_labels * train_weights
 
     per_example_loss = -tf.reduce_sum(one_hot_labels * log_probs, axis=-1)
     loss = tf.reduce_mean(per_example_loss)
@@ -902,6 +906,16 @@ def main(_):
   num_warmup_steps = None
   if FLAGS.do_train:
     train_examples = processor.get_train_examples(FLAGS.data_dir)
+    train_labels = [e.label for e in train_examples]
+    train_labels = collections.Counter(train_labels)
+    train_has_labels = processor.get_labels()
+    #print(train_labels)
+    train_weights = []
+    all_samples = len(train_examples)
+    for l in train_has_labels:
+        train_weights.append(all_samples / train_labels[l])
+    train_weights = np.array(train_weights) / len(train_has_labels)
+    print(train_weights)
     num_train_steps = int(
         len(train_examples) / FLAGS.train_batch_size * FLAGS.num_train_epochs)
     num_warmup_steps = int(num_train_steps * FLAGS.warmup_proportion)
