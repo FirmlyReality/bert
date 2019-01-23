@@ -394,11 +394,14 @@ class GubaProcessor(DataProcessor):
 
   def get_labels(self):
     """See base class."""
-    return ["0", "1"]
+    return ["0","1", "2", "3"]
 
   def _create_examples(self, data, set_type):
     """Creates examples for the training and dev sets."""
     examples = []
+    data['length'] = [len(str(data.loc[idx]['content'])) for idx in data.index]
+    data = data[data['length'] <= 256]
+    #data = data[data['是否股评相关'] == '1']
     if set_type == "train":
         data = data[:3000]
     else:
@@ -406,10 +409,29 @@ class GubaProcessor(DataProcessor):
     for i in data.index:
         d = data.loc[i];
         guid = "%s-%s" % (set_type, str(i))
+        code = str(d['code'])
+        name = str(d['name']).replace('Ａ',"")
+        code = "0"*(6-len(code)) + code
+        #print(code)
+        text_b = tokenization.convert_to_unicode(name)
         text_a = tokenization.convert_to_unicode(str(d['content']))
-        label = tokenization.convert_to_unicode(str(d['是否股评相关']))
-        examples.append(
-            InputExample(guid=guid, text_a=text_a, text_b=None, label=label))
+        label1 = str(d['是否股评相关'])
+        label2 = str(d['明天以后看好程度'])
+        if label1 == '1' and (label2 == "1" or label2 == '2'):
+            label = tokenization.convert_to_unicode('1')
+        elif label1 == '1' and label2 == '3':
+            label = tokenization.convert_to_unicode('2')
+        elif label1 == '1' and (label2 == '4' or label2 == '5'):
+            label = tokenization.convert_to_unicode('3')
+        else:
+            label = tokenization.convert_to_unicode('0')
+        if set_type == 'train' and d['是否股评相关']=='1':
+            for i in range(2):
+                examples.append(
+                    InputExample(guid=guid, text_a=text_a, text_b=None, label=label))
+        else:
+            examples.append(
+                InputExample(guid=guid, text_a=text_a, text_b=None, label=label))
     #print(examples[:10])
     return examples
     
