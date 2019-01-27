@@ -381,21 +381,21 @@ class GubaProcessor(DataProcessor):
   def get_train_examples(self, data_dir):
     """See base class."""
     return self._create_examples(
-        pd.read_csv(os.path.join(data_dir, "samples1_utf8.csv"),dtype=str)[:4200], "train") 
+        pd.read_csv(os.path.join(data_dir, "samples1.csv"),dtype=str)[:4400], "train") 
 
   def get_dev_examples(self, data_dir):
     """See base class."""
     return self._create_examples(
-        pd.read_csv(os.path.join(data_dir, "samples1_utf8.csv"),dtype=str)[:4200], "dev")
+        pd.read_csv(os.path.join(data_dir, "samples1.csv"),dtype=str)[:4400], "dev")
 
   def get_test_examples(self, data_dir):
     """See base class."""
     return self._create_examples(
-        pd.read_csv(os.path.join(data_dir, "samples1_utf8.csv"),dtype=str)[:4200], "test")
+        pd.read_csv(os.path.join(data_dir, "samples1.csv"),dtype=str)[:4400], "test")
 
   def get_labels(self):
     """See base class."""
-    return ["0","1", "2", "3"]
+    return ["1","2","3"]
 
   def _create_examples(self, data, set_type):
     """Creates examples for the training and dev sets."""
@@ -404,9 +404,10 @@ class GubaProcessor(DataProcessor):
     data = data[data['length'] <= 256]
     #data = data[data['是否股评相关'] == '1']
     if set_type == "train":
-        data = data[:3000]
+        data = data[:3400]
     else:
-        data = data[3000:]
+    #elif set_type == "dev":
+        data = data[3400:]
     for i in data.index:
         d = data.loc[i];
         guid = "%s-%s" % (set_type, str(i))
@@ -421,18 +422,21 @@ class GubaProcessor(DataProcessor):
         if label1 == '1' and (label2 == "1" or label2 == '2'):
             label = tokenization.convert_to_unicode('1')
         elif label1 == '1' and label2 == '3':
+            continue
             label = tokenization.convert_to_unicode('2')
         elif label1 == '1' and (label2 == '4' or label2 == '5'):
             label = tokenization.convert_to_unicode('3')
         else:
+            continue
             label = tokenization.convert_to_unicode('0')
-        if set_type == 'train' and d['是否股评相关']=='1':
+        '''if set_type == 'train' and d['是否股评相关']=='1':
             for i in range(2):
                 examples.append(
                     InputExample(guid=guid, text_a=text_a, text_b=None, label=label))
-        else:
-            examples.append(
-                InputExample(guid=guid, text_a=text_a, text_b=None, label=label))
+        else:'''
+        #label = tokenization.convert_to_unicode(label1)
+        examples.append(
+            InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
     #print(examples[:10])
     return examples
     
@@ -610,7 +614,6 @@ def file_based_input_fn_builder(input_file, seq_length, is_training,
             lambda record: _decode_record(record, name_to_features),
             batch_size=batch_size,
             drop_remainder=drop_remainder))
-
     return d
 
   return input_fn
@@ -634,7 +637,7 @@ def _truncate_seq_pair(tokens_a, tokens_b, max_length):
 
 
 def create_model(bert_config, is_training, input_ids, input_mask, segment_ids,
-                 labels, num_labels, use_one_hot_embeddings):
+                 labels, num_labels, use_one_hot_embeddings, train_weights=None):
   """Creates a classification model."""
   model = modeling.BertModel(
       config=bert_config,
@@ -671,8 +674,7 @@ def create_model(bert_config, is_training, input_ids, input_mask, segment_ids,
     log_probs = tf.nn.log_softmax(logits, axis=-1)
 
     one_hot_labels = tf.one_hot(labels, depth=num_labels, dtype=tf.float32)
-    global train_weights
-    if is_training:
+    if is_training and train_weights is not None:
       one_hot_labels = one_hot_labels * train_weights
 
     per_example_loss = -tf.reduce_sum(one_hot_labels * log_probs, axis=-1)
@@ -683,7 +685,7 @@ def create_model(bert_config, is_training, input_ids, input_mask, segment_ids,
 
 def model_fn_builder(bert_config, num_labels, init_checkpoint, learning_rate,
                      num_train_steps, num_warmup_steps, use_tpu,
-                     use_one_hot_embeddings):
+                     use_one_hot_embeddings,train_weights=None):
   """Returns `model_fn` closure for TPUEstimator."""
 
   def model_fn(features, labels, mode, params):  # pylint: disable=unused-argument
@@ -707,7 +709,7 @@ def model_fn_builder(bert_config, num_labels, init_checkpoint, learning_rate,
 
     (total_loss, per_example_loss, logits, probabilities) = create_model(
         bert_config, is_training, input_ids, input_mask, segment_ids, label_ids,
-        num_labels, use_one_hot_embeddings)
+        num_labels, use_one_hot_embeddings, train_weights)
 
     tvars = tf.trainable_variables()
     initialized_variable_names = {}
@@ -771,7 +773,6 @@ def model_fn_builder(bert_config, num_labels, init_checkpoint, learning_rate,
     return output_spec
 
   return model_fn
-
 
 # This function is not used by this file but is still used by the Colab and
 # people who depend on it.
@@ -913,8 +914,11 @@ def main(_):
     train_weights = []
     all_samples = len(train_examples)
     for l in train_has_labels:
-        train_weights.append(all_samples / train_labels[l])
-    train_weights = np.array(train_weights) / len(train_has_labels)
+        if train_labels[l] == 0:
+            train_weights.append(0)
+        else:
+            train_weights.append(all_samples / train_labels[l])
+    train_weights = np.array(train_weights) / sum(train_weights)
     print(train_weights)
     num_train_steps = int(
         len(train_examples) / FLAGS.train_batch_size * FLAGS.num_train_epochs)
@@ -928,7 +932,8 @@ def main(_):
       num_train_steps=num_train_steps,
       num_warmup_steps=num_warmup_steps,
       use_tpu=FLAGS.use_tpu,
-      use_one_hot_embeddings=FLAGS.use_tpu)
+      use_one_hot_embeddings=FLAGS.use_tpu,
+      train_weights=train_weights)
 
   # If TPU is not available, this will fall back to normal Estimator on CPU
   # or GPU.
