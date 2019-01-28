@@ -381,21 +381,21 @@ class GubaProcessor(DataProcessor):
   def get_train_examples(self, data_dir):
     """See base class."""
     return self._create_examples(
-        pd.read_csv(os.path.join(data_dir, "samples1.csv"),dtype=str)[:4400], "train") 
+        pd.read_csv(os.path.join(data_dir, "samples1.csv"),dtype=str)[:4470], "train") 
 
   def get_dev_examples(self, data_dir):
     """See base class."""
     return self._create_examples(
-        pd.read_csv(os.path.join(data_dir, "samples1.csv"),dtype=str)[:4400], "dev")
+        pd.read_csv(os.path.join(data_dir, "samples1.csv"),dtype=str)[:4470], "dev")
 
   def get_test_examples(self, data_dir):
     """See base class."""
     return self._create_examples(
-        pd.read_csv(os.path.join(data_dir, "samples1.csv"),dtype=str)[:4400], "test")
+        pd.read_csv(os.path.join(data_dir, "samples1.csv"),dtype=str)[:4470], "test")
 
   def get_labels(self):
     """See base class."""
-    return ["1","2","3"]
+    return ["0","1","2","3"]
 
   def _create_examples(self, data, set_type):
     """Creates examples for the training and dev sets."""
@@ -422,12 +422,12 @@ class GubaProcessor(DataProcessor):
         if label1 == '1' and (label2 == "1" or label2 == '2'):
             label = tokenization.convert_to_unicode('1')
         elif label1 == '1' and label2 == '3':
-            continue
+            #continue
             label = tokenization.convert_to_unicode('2')
         elif label1 == '1' and (label2 == '4' or label2 == '5'):
             label = tokenization.convert_to_unicode('3')
         else:
-            continue
+            #continue
             label = tokenization.convert_to_unicode('0')
         '''if set_type == 'train' and d['是否股评相关']=='1':
             for i in range(2):
@@ -439,6 +439,33 @@ class GubaProcessor(DataProcessor):
             InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
     #print(examples[:10])
     return examples
+
+class ValidationHook(tf.train.SessionRunHook):
+    def __init__(self, estimator, input_fn,
+                 every_n_secs=None, every_n_steps=None):
+        self._iter_count = 0
+        self._estimator = estimator
+        self._input_fn = input_fn
+        self._timer = tf.train.SecondOrStepTimer(every_n_secs, every_n_steps)
+        self._should_trigger = False
+
+    def begin(self):
+        self._timer.reset()
+        self._iter_count = 0
+
+    def before_run(self, run_context):
+        self._should_trigger = self._timer.should_trigger_for_step(self._iter_count)
+
+    def after_run(self, run_context, run_values):
+        if self._should_trigger:
+            result = self._estimator.evaluate(
+                self._input_fn
+            )
+            tf.logging.info("***** Eval results *****")
+            for key in sorted(result.keys()):
+                tf.logging.info("  %s = %s", key, str(result[key]))
+            self._timer.update_last_triggered_step(self._iter_count)
+        self._iter_count += 1
     
 def convert_single_example(ex_index, example, label_list, max_seq_length,
                            tokenizer):
@@ -664,6 +691,7 @@ def create_model(bert_config, is_training, input_ids, input_mask, segment_ids,
       "output_bias", [num_labels], initializer=tf.zeros_initializer())
 
   with tf.variable_scope("loss"):
+    #output_layer = tf.stop_gradient(output_layer)
     if is_training:
       # I.e., 0.1 dropout
       output_layer = tf.nn.dropout(output_layer, keep_prob=0.9)
@@ -691,9 +719,11 @@ def model_fn_builder(bert_config, num_labels, init_checkpoint, learning_rate,
   def model_fn(features, labels, mode, params):  # pylint: disable=unused-argument
     """The `model_fn` for TPUEstimator."""
 
-    tf.logging.info("*** Features ***")
-    for name in sorted(features.keys()):
-      tf.logging.info("  name = %s, shape = %s" % (name, features[name].shape))
+    is_training = (mode == tf.estimator.ModeKeys.TRAIN)
+    if is_training:
+        tf.logging.info("*** Features ***")
+        for name in sorted(features.keys()):
+            tf.logging.info("  name = %s, shape = %s" % (name, features[name].shape))
 
     input_ids = features["input_ids"]
     input_mask = features["input_mask"]
@@ -704,8 +734,6 @@ def model_fn_builder(bert_config, num_labels, init_checkpoint, learning_rate,
       is_real_example = tf.cast(features["is_real_example"], dtype=tf.float32)
     else:
       is_real_example = tf.ones(tf.shape(label_ids), dtype=tf.float32)
-
-    is_training = (mode == tf.estimator.ModeKeys.TRAIN)
 
     (total_loss, per_example_loss, logits, probabilities) = create_model(
         bert_config, is_training, input_ids, input_mask, segment_ids, label_ids,
@@ -727,12 +755,13 @@ def model_fn_builder(bert_config, num_labels, init_checkpoint, learning_rate,
       else:
         tf.train.init_from_checkpoint(init_checkpoint, assignment_map)
 
-    tf.logging.info("**** Trainable Variables ****")
-    for var in tvars:
-      init_string = ""
-      if var.name in initialized_variable_names:
-        init_string = ", *INIT_FROM_CKPT*"
-      tf.logging.info("  name = %s, shape = %s%s", var.name, var.shape,
+    if is_training:
+        tf.logging.info("**** Trainable Variables ****")
+        for var in tvars:
+            init_string = ""
+            if var.name in initialized_variable_names:
+                init_string = ", *INIT_FROM_CKPT*"
+            tf.logging.info("  name = %s, shape = %s%s", var.name, var.shape,
                       init_string)
 
     output_spec = None
@@ -896,6 +925,7 @@ def main(_):
       cluster=tpu_cluster_resolver,
       master=FLAGS.master,
       model_dir=FLAGS.output_dir,
+      keep_checkpoint_max = 20,
       save_checkpoints_steps=FLAGS.save_checkpoints_steps,
       tpu_config=tf.contrib.tpu.TPUConfig(
           iterations_per_loop=FLAGS.iterations_per_loop,
@@ -958,7 +988,19 @@ def main(_):
         seq_length=FLAGS.max_seq_length,
         is_training=True,
         drop_remainder=True)
-    estimator.train(input_fn=train_input_fn, max_steps=num_train_steps)
+    eval_examples = processor.get_dev_examples(FLAGS.data_dir)
+    num_actual_eval_examples = len(eval_examples)
+    eval_file = os.path.join(FLAGS.output_dir, "eval.tf_record")
+    file_based_convert_examples_to_features(
+        eval_examples, label_list, FLAGS.max_seq_length, tokenizer, eval_file)
+    eval_drop_remainder = True if FLAGS.use_tpu else False
+    eval_input_fn = file_based_input_fn_builder(
+        input_file=eval_file,
+        seq_length=FLAGS.max_seq_length,
+        is_training=False,
+        drop_remainder=eval_drop_remainder)
+    estimator.train(input_fn=train_input_fn, max_steps=num_train_steps, 
+        hooks=[ValidationHook(estimator, eval_input_fn, every_n_secs=None, every_n_steps=int(FLAGS.save_checkpoints_steps))])
 
   if FLAGS.do_eval:
     eval_examples = processor.get_dev_examples(FLAGS.data_dir)
