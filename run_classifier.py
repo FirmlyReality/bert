@@ -397,17 +397,9 @@ class GubaProcessor(DataProcessor):
     return self._create_examples(
         pd.read_csv(os.path.join(data_dir, "samples1.csv"),dtype=str)[:4470], "test")
 
-  def get_predict_examples(self, data_dir, filename):
+  def get_predict_examples(self, stocks_name, data_dir, filename):
     print("Read from %s..." % (data_dir+"/"+filename))
     data = pd.read_csv(os.path.join(data_dir,filename), dtype=str)
-    
-    stocks_name_file = open("stokcs_name.txt")
-    stocks_name = {}
-    for line in stocks_name_file.read().splitlines():
-        code,name = line.split("\t")
-        stocks_name[code] = name
-    print(stocks_name)
-
     code = filename.split('_')[0]
     name = stocks_name[code]
     dtype = filename.split('_')[1][:-4]
@@ -1116,7 +1108,7 @@ def main(_):
 
     result = estimator.predict(input_fn=predict_input_fn)
 
-    output_predict_file = os.path.join(FLAGS.output_dir, file.split(".")[0]+".tsv")
+    output_predict_file = os.path.join(FLAGS.output_dir, "test_results.tsv")
     with tf.gfile.GFile(output_predict_file, "w") as writer:
       num_written_lines = 0
       tf.logging.info("***** Predict results *****")
@@ -1132,9 +1124,16 @@ def main(_):
     assert num_written_lines == num_actual_predict_examples            
         
   if FLAGS.do_mypredict:
-    files = sort(os.listdir(FLAGS.data_dir))
+    files = sorted(os.listdir(FLAGS.data_dir))
+    #print(files)
+    stocks_name_file = open("stocks_name.txt")
+    stocks_name = {}
+    for line in stocks_name_file.read().splitlines():
+        code,name = line.split("\t")
+        stocks_name[code] = name
+    print(stocks_name)
     for file in files:
-        predict_examples = processor.get_predict_examples(FLAGS.data_dir+"/"+file)
+        predict_examples = processor.get_predict_examples(stocks_name, FLAGS.data_dir, file)
         num_actual_predict_examples = len(predict_examples)
         if FLAGS.use_tpu:
           # TPU requires a fixed batch size for all batches, therefore the number
