@@ -699,7 +699,8 @@ def create_model(bert_config, is_training, input_ids, input_mask, segment_ids,
     logits = tf.matmul(output_layer, output_weights, transpose_b=True)
     logits = tf.nn.bias_add(logits, output_bias)
     probabilities = tf.nn.softmax(logits, axis=-1)
-    log_probs = tf.nn.log_softmax(logits, axis=-1)
+    cordination = tf.pow(1-probabilities, 1.3)
+    log_probs = tf.nn.log_softmax(logits, axis=-1) #* cordination
 
     one_hot_labels = tf.one_hot(labels, depth=num_labels, dtype=tf.float32)
     if is_training and train_weights is not None:
@@ -935,6 +936,7 @@ def main(_):
   train_examples = None
   num_train_steps = None
   num_warmup_steps = None
+  train_weights = None
   if FLAGS.do_train:
     train_examples = processor.get_train_examples(FLAGS.data_dir)
     train_labels = [e.label for e in train_examples]
@@ -1049,6 +1051,8 @@ def main(_):
         writer.write("%s = %s\n" % (key, str(result[key])))
 
   if FLAGS.do_predict:
+    files = sort(os.listdir(FLAGS.data_dir))
+    for file in files:
     predict_examples = processor.get_test_examples(FLAGS.data_dir)
     num_actual_predict_examples = len(predict_examples)
     if FLAGS.use_tpu:
