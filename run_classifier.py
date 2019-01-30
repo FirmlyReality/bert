@@ -393,6 +393,37 @@ class GubaProcessor(DataProcessor):
     return self._create_examples(
         pd.read_csv(os.path.join(data_dir, "samples1.csv"),dtype=str)[:4470], "test")
 
+  def get_predict_examples(self, data_dir, filename):
+    print("Read from %s..." % (data_dir+"/"+filename))
+    data = pd.read_csv(os.path.join(data_dir,filename), dtype=str)
+    
+    stocks_name_file = open("stokcs_name.txt")
+    stocks_name = {}
+    for line in stocks_name_file.read().splitlines():
+        code,name = line.split("\t")
+        stocks_name[code] = name
+    print(stocks_name)
+
+    code = filename.split('_')[0]
+    name = stocks_name[code]
+    dtype = filename.split('_')[1][:-4]
+    examples = []
+    for i in data.index:
+        d = data.loc[i]
+        guid = "predict-%s" % (str(i))
+        text_b = tokenization.convert_to_unicode(str(name))
+        label = tokenization.convert_to_unicode('0')
+        if dtype == "reply":
+            text_a = tokenization.convert_to_unicode(str(d['content']))
+        elif dtype == "tiezi":
+            text_a = tokenization.convert_to_unicode(str(d['title']))
+            examples.append(
+                InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
+            text_a = tokenization.convert_to_unicode(str(d['title'])+" "+str(d['content']))
+        examples.append(
+            InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
+    return examples
+
   def get_labels(self):
     """See base class."""
     return ["0","1","2","3"]
