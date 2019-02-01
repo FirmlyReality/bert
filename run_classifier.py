@@ -415,6 +415,7 @@ class GubaProcessor(DataProcessor):
             text_a = tokenization.convert_to_unicode(str(d['title']))
             examples.append(
                 InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
+            guid = "predict-c-%s" % (str(i))
             text_a = tokenization.convert_to_unicode(str(d['title'])+" "+str(d['content']))
         examples.append(
             InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
