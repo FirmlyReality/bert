@@ -2,7 +2,7 @@ set BERT_BASE_DIR=../chinese_L-12_H-768_A-12
 set MY_DATASET=../../../data 
 
 python run_classifier.py ^
---task_name=guba ^
+--task_name=reply ^
 --do_train=true ^
 --do_eval=true ^
 --data_dir=%MY_DATASET% ^

@@ -467,6 +467,85 @@ class GubaProcessor(DataProcessor):
             InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
     #print(examples[:10])
     return examples
+    
+class ReplyProcessor(DataProcessor):
+  """Processor for the Guba reply data set."""
+
+  def get_train_examples(self, data_dir):
+    """See base class."""
+    return self._create_examples(
+        pd.read_csv(os.path.join(data_dir, "samples1.csv"),dtype=str)[:4470], "train") 
+
+  def get_dev_examples(self, data_dir):
+    """See base class."""
+    return self._create_examples(
+        pd.read_csv(os.path.join(data_dir, "samples1.csv"),dtype=str)[:4470], "dev")
+
+  def get_test_examples(self, data_dir):
+    """See base class."""
+    return self._create_examples(
+        pd.read_csv(os.path.join(data_dir, "samples1.csv"),dtype=str)[:4470], "test")
+
+  def get_predict_examples(self, stocks_name, data_dir, filename):
+    print("Read from %s..." % (data_dir+"/"+filename))
+    data = pd.read_csv(os.path.join(data_dir,filename), dtype=str)
+    code = filename.split('_')[0]
+    name = stocks_name[code]
+    dtype = filename.split('_')[1][:-4]
+    examples = []
+    for i in data.index:
+        d = data.loc[i]
+        guid = "predict-%s" % (str(i))
+        text_b = tokenization.convert_to_unicode(str(name))
+        label = tokenization.convert_to_unicode('0')
+        if dtype == "reply":
+            text_a = tokenization.convert_to_unicode(str(d['content']))
+        elif dtype == "tiezi":
+            text_a = tokenization.convert_to_unicode(str(d['title']))
+            examples.append(
+                InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
+            guid = "predict-c-%s" % (str(i))
+            text_a = tokenization.convert_to_unicode(str(d['title'])+" "+str(d['content']))
+        examples.append(
+            InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
+    return examples
+
+  def get_labels(self):
+    """See base class."""
+    return ["0","1","2"]
+
+  def _create_examples(self, data, set_type):
+    """Creates examples for the training and dev sets."""
+    examples = []
+    data = data[data['type'] == 'reply']
+    #data = data[data['是否股评相关'] == '0']
+    if set_type == "train":
+        data = data[:1900]
+    else:
+    #elif set_type == "dev":
+        data = data[1900:]
+    for i in data.index:
+        d = data.loc[i];
+        guid = "%s-%s" % (set_type, str(i))
+        code = str(d['code'])
+        name = str(d['name']).replace('Ａ',"")
+        code = "0"*(6-len(code)) + code
+        #print(code)
+        text_b = tokenization.convert_to_unicode(name)
+        text_a = tokenization.convert_to_unicode(str(d['content']))
+        label1 = str(d['是否股评相关'])
+        label2 = str(d['明天以后看好程度'])
+        if label1 == '0' and (label2 == "1" or label2 == '2'):
+            label = tokenization.convert_to_unicode('1')
+        elif label1 == '0' and (label2 == '4' or label2 == '5'):
+            label = tokenization.convert_to_unicode('2')
+        else:
+            #continue
+            label = tokenization.convert_to_unicode('0')
+        #label = tokenization.convert_to_unicode(label1)
+        examples.append(
+            InputExample(guid=guid, text_a=text_a, text_b=None, label=label))
+    return examples
 
 class ValidationHook(tf.train.SessionRunHook):
     def __init__(self, estimator, input_fn,
@@ -912,7 +991,8 @@ def main(_):
       "mnli": MnliProcessor,
       "mrpc": MrpcProcessor,
       "xnli": XnliProcessor,
-      "guba": GubaProcessor
+      "guba": GubaProcessor,
+      "reply": ReplyProcessor
   }
 
   tokenization.validate_case_matches_checkpoint(FLAGS.do_lower_case,
