@@ -385,17 +385,17 @@ class GubaProcessor(DataProcessor):
   def get_train_examples(self, data_dir):
     """See base class."""
     return self._create_examples(
-        pd.read_csv(os.path.join(data_dir, "samples1.csv"),dtype=str)[:4470], "train") 
+        pd.read_csv(os.path.join(data_dir, "gsamples_train.csv"),dtype=str), "train") 
 
   def get_dev_examples(self, data_dir):
     """See base class."""
     return self._create_examples(
-        pd.read_csv(os.path.join(data_dir, "samples1.csv"),dtype=str)[:4470], "dev")
+        pd.read_csv(os.path.join(data_dir, "gsamples_train.csv"),dtype=str), "dev")
 
   def get_test_examples(self, data_dir):
     """See base class."""
     return self._create_examples(
-        pd.read_csv(os.path.join(data_dir, "samples1.csv"),dtype=str)[:4470], "test")
+        pd.read_csv(os.path.join(data_dir, "gsamples_train.csv"),dtype=str), "test")
 
   def get_predict_examples(self, stocks_name, data_dir, filename):
     print("Read from %s..." % (data_dir+"/"+filename))
@@ -430,12 +430,13 @@ class GubaProcessor(DataProcessor):
     examples = []
     data['length'] = [len(str(data.loc[idx]['content'])) for idx in data.index]
     data = data[data['length'] <= 256]
+    train_len = int(len(data) * 0.8)
     #data = data[data['是否股评相关'] == '1']
     if set_type == "train":
-        data = data[:3400]
+        data = data[:train_len]
     else:
     #elif set_type == "dev":
-        data = data[3400:]
+        data = data[train_len:]
     for i in data.index:
         d = data.loc[i];
         guid = "%s-%s" % (set_type, str(i))
@@ -464,7 +465,7 @@ class GubaProcessor(DataProcessor):
         else:'''
         #label = tokenization.convert_to_unicode(label1)
         examples.append(
-            InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
+            InputExample(guid=guid, text_a=text_a, text_b=none, label=label))
     #print(examples[:10])
     return examples
     
@@ -493,6 +494,8 @@ class ReplyProcessor(DataProcessor):
     name = stocks_name[code]
     dtype = filename.split('_')[1][:-4]
     examples = []
+    if dtype != "reply":
+        return []
     for i in data.index:
         d = data.loc[i]
         guid = "predict-%s" % (str(i))
@@ -500,14 +503,8 @@ class ReplyProcessor(DataProcessor):
         label = tokenization.convert_to_unicode('0')
         if dtype == "reply":
             text_a = tokenization.convert_to_unicode(str(d['content']))
-        elif dtype == "tiezi":
-            text_a = tokenization.convert_to_unicode(str(d['title']))
-            examples.append(
-                InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
-            guid = "predict-c-%s" % (str(i))
-            text_a = tokenization.convert_to_unicode(str(d['title'])+" "+str(d['content']))
         examples.append(
-            InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
+            InputExample(guid=guid, text_a=text_a, text_b=None, label=label))
     return examples
 
   def get_labels(self):
@@ -806,8 +803,8 @@ def create_model(bert_config, is_training, input_ids, input_mask, segment_ids,
     logits = tf.matmul(output_layer, output_weights, transpose_b=True)
     logits = tf.nn.bias_add(logits, output_bias)
     probabilities = tf.nn.softmax(logits, axis=-1)
-    cordination = tf.pow(1-probabilities, 1.3)
-    log_probs = tf.nn.log_softmax(logits, axis=-1) #* cordination
+    cordination = tf.pow(1-probabilities, 2)
+    log_probs = tf.nn.log_softmax(logits, axis=-1) * cordination
 
     one_hot_labels = tf.one_hot(labels, depth=num_labels, dtype=tf.float32)
     if is_training and train_weights is not None:
@@ -1214,6 +1211,8 @@ def main(_):
         stocks_name[code] = name
     print(stocks_name)
     for file in files:
+        if FLAGS.task_name.lower() == "reply" and file.split('.')[0].split('_')[1] != 'reply':
+            continue
         predict_examples = processor.get_predict_examples(stocks_name, FLAGS.data_dir, file)
         num_actual_predict_examples = len(predict_examples)
         if FLAGS.use_tpu:
